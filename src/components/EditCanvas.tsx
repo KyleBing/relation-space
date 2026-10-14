@@ -27,6 +27,8 @@ import '@xyflow/react/dist/style.css'
 import { EventNode, type FlowEventNode } from './EventNode'
 import { RelationEdge } from './RelationEdge'
 import { ContextMenu, type ContextMenuState } from './ContextMenu'
+import { SelectionAlignBar } from './SelectionAlignBar'
+import { alignSelectedNodes, type AlignMode } from '../lib/alignNodes'
 import { nextEdgeId, useGraphStore } from '../store/graphStore'
 import type { GraphEdge, GraphNode } from '../types/graph'
 
@@ -45,7 +47,11 @@ function toFlowNodes(
       id: n.id,
       type: 'event' as const,
       position: { x: n.position.x, y: n.position.y },
-      data: { label: n.label, kind: n.kind },
+      data: {
+        label: n.label,
+        kind: n.kind,
+        labelFolded: n.labelFolded === true,
+      },
       ...(prev?.selected ? { selected: true } : {}),
       ...(prev?.measured ? { measured: prev.measured } : {}),
       ...(prev?.width != null ? { width: prev.width } : {}),
@@ -72,6 +78,7 @@ function flowToGraphNodes(
   prev: GraphNode[],
 ): GraphNode[] {
   const zMap = new Map(prev.map((n) => [n.id, n.position.z ?? 0]))
+  const foldMap = new Map(prev.map((n) => [n.id, n.labelFolded === true]))
   return flowNodes.map((fn) => ({
     id: fn.id,
     label: fn.data.label,
@@ -81,6 +88,9 @@ function flowToGraphNodes(
       y: fn.position.y,
       z: zMap.get(fn.id) ?? 0,
     },
+    ...(foldMap.get(fn.id) || fn.data.labelFolded
+      ? { labelFolded: true }
+      : {}),
   }))
 }
 
@@ -102,6 +112,7 @@ function nodesSig(nodes: GraphNode[]) {
       x.position.x,
       x.position.y,
       x.position.z,
+      x.labelFolded === true,
     ]),
   )
 }
@@ -120,6 +131,7 @@ function EditCanvasInner() {
   const setStoreNodes = useGraphStore((s) => s.setNodes)
   const setStoreEdges = useGraphStore((s) => s.setEdges)
   const setSelectedNodeId = useGraphStore((s) => s.setSelectedNodeId)
+  const setSelectedNodeIds = useGraphStore((s) => s.setSelectedNodeIds)
   const setSelectedEdgeId = useGraphStore((s) => s.setSelectedEdgeId)
   const addNode = useGraphStore((s) => s.addNode)
   const removeNode = useGraphStore((s) => s.removeNode)
@@ -298,6 +310,20 @@ function EditCanvasInner() {
     commitNodes(nodesRef.current as FlowEventNode[])
   }, [commitNodes])
 
+  // 对框选/多选节点做对齐或等距分布
+  const onAlign = useCallback(
+    (mode: AlignMode) => {
+      setNodes((nds) => {
+        const next = alignSelectedNodes(nds as FlowEventNode[], mode)
+        commitNodes(next)
+        return next
+      })
+    },
+    [setNodes, commitNodes],
+  )
+
+  const selectedCount = nodes.filter((n) => n.selected).length
+
   const onNodesDelete = useCallback(
     (deleted: Node[]) => {
       const ids = new Set(deleted.map((n) => n.id))
@@ -322,19 +348,20 @@ function EditCanvasInner() {
 
   const closeMenu = useCallback(() => setMenu(null), [])
 
-  // 框选/多选时同步侧栏：取最后一个选中节点
+  // 框选/多选时同步侧栏与批量属性
   const onSelectionChange = useCallback(
     ({ nodes: selNodes, edges: selEdges }: OnSelectionChangeParams) => {
       if (selNodes.length > 0) {
-        setSelectedNodeId(selNodes[selNodes.length - 1].id)
+        setSelectedNodeIds(selNodes.map((n) => n.id))
         return
       }
       if (selEdges.length > 0) {
         setSelectedEdgeId(selEdges[selEdges.length - 1].id)
         return
       }
+      setSelectedNodeIds([])
     },
-    [setSelectedNodeId, setSelectedEdgeId],
+    [setSelectedNodeIds, setSelectedEdgeId],
   )
 
   const openPaneMenu = useCallback(
@@ -385,9 +412,8 @@ function EditCanvasInner() {
         onNodeDragStop={onNodeDragStop}
         onNodesDelete={onNodesDelete}
         onEdgesDelete={onEdgesDelete}
-        onNodeClick={(_, n) => {
+        onNodeClick={() => {
           setMenu(null)
-          setSelectedNodeId(n.id)
         }}
         onEdgeClick={(_, e) => {
           setMenu(null)
@@ -396,7 +422,7 @@ function EditCanvasInner() {
         onSelectionChange={onSelectionChange}
         onPaneClick={() => {
           setMenu(null)
-          setSelectedNodeId(null)
+          setSelectedNodeIds([])
           setSelectedEdgeId(null)
         }}
         onPaneContextMenu={openPaneMenu}
@@ -423,7 +449,12 @@ function EditCanvasInner() {
         <MiniMap
           pannable
           zoomable
-          nodeColor={() => '#2f6f7e'}
+          nodeColor={(n) => {
+            const kind = (n.data as FlowEventNode['data'] | undefined)?.kind
+            if (kind === 'thing') return '#b3582a'
+            if (kind === 'concept') return '#3d5a80'
+            return '#2f6f7e'
+          }}
           maskColor="rgba(245, 247, 250, 0.7)"
         />
       </ReactFlow>
@@ -437,8 +468,11 @@ function EditCanvasInner() {
         />
       )}
 
+      <SelectionAlignBar count={selectedCount} onAlign={onAlign} />
+
       <p className="canvas-hint">
-        拖动画布框选 · 空格+拖动平移 · 回车添加 · 拖出连线松手新建 · Delete 删除
+        拖动画布框选 · Shift 多选 · 空格+拖动平移 · 回车添加 · 拖出连线松手新建 ·
+        Delete 删除
       </p>
     </div>
   )

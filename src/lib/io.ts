@@ -29,6 +29,8 @@ function parseNode(raw: unknown, index: number): GraphNode {
       y: Number(pos.y ?? 0),
       z: Number(pos.z ?? 0),
     },
+    // 兼容旧文件：缺省不折叠
+    ...(raw.labelFolded === true ? { labelFolded: true } : {}),
   }
 }
 

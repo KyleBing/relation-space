@@ -1,7 +1,18 @@
 import { create } from 'zustand'
-import type { AppMode, GraphDocument, GraphEdge, GraphNode } from '../types/graph'
+import type {
+  AppMode,
+  GraphDocument,
+  GraphEdge,
+  GraphNode,
+  Vec3,
+} from '../types/graph'
 import { sampleDocument } from '../lib/sample'
 import { downloadJson, readJsonFile, toExportDocument } from '../lib/io'
+
+// 批量更新可只改 position 的部分字段
+type NodeBatchPatch = Omit<Partial<GraphNode>, 'position'> & {
+  position?: Partial<Vec3>
+}
 
 interface GraphState {
   mode: AppMode
@@ -9,6 +20,8 @@ interface GraphState {
   nodes: GraphNode[]
   edges: GraphEdge[]
   selectedNodeId: string | null
+  // 画布多选节点 id（含单选）
+  selectedNodeIds: string[]
   selectedEdgeId: string | null
   // 行内编辑时禁止 Delete 误删节点
   editingText: boolean
@@ -19,6 +32,8 @@ interface GraphState {
   setNodes: (nodes: GraphNode[]) => void
   setEdges: (edges: GraphEdge[]) => void
   updateNode: (id: string, patch: Partial<GraphNode>) => void
+  // 批量更新多个节点的共享属性
+  updateNodes: (ids: string[], patch: NodeBatchPatch) => void
   updateEdge: (id: string, patch: Partial<GraphEdge>) => void
   addNode: (
     kind?: GraphNode['kind'],
@@ -27,6 +42,7 @@ interface GraphState {
   removeNode: (id: string) => void
   removeSelected: () => void
   setSelectedNodeId: (id: string | null) => void
+  setSelectedNodeIds: (ids: string[]) => void
   setSelectedEdgeId: (id: string | null) => void
   setEditingText: (editing: boolean) => void
   setEditingNodeId: (id: string | null) => void
@@ -51,6 +67,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   nodes: sampleDocument.nodes,
   edges: sampleDocument.edges,
   selectedNodeId: null,
+  selectedNodeIds: [],
   selectedEdgeId: null,
   editingText: false,
   editingNodeId: null,
@@ -59,8 +76,24 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   setTitle: (title) => set({ title }),
   setNodes: (nodes) => set({ nodes }),
   setEdges: (edges) => set({ edges }),
-  setSelectedNodeId: (id) => set({ selectedNodeId: id, selectedEdgeId: null }),
-  setSelectedEdgeId: (id) => set({ selectedEdgeId: id, selectedNodeId: null }),
+  setSelectedNodeId: (id) =>
+    set({
+      selectedNodeId: id,
+      selectedNodeIds: id ? [id] : [],
+      selectedEdgeId: null,
+    }),
+  setSelectedNodeIds: (ids) =>
+    set({
+      selectedNodeIds: ids,
+      selectedNodeId: ids.length > 0 ? ids[ids.length - 1] : null,
+      selectedEdgeId: ids.length > 0 ? null : get().selectedEdgeId,
+    }),
+  setSelectedEdgeId: (id) =>
+    set({
+      selectedEdgeId: id,
+      selectedNodeId: null,
+      selectedNodeIds: [],
+    }),
   setEditingText: (editingText) => set({ editingText }),
   setEditingNodeId: (editingNodeId) => set({ editingNodeId }),
 
@@ -68,6 +101,27 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     set((s) => ({
       nodes: s.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)),
     })),
+
+  updateNodes: (ids, patch) => {
+    if (ids.length === 0) return
+    const idSet = new Set(ids)
+    const { position: posPatch, ...rest } = patch
+    set((s) => ({
+      nodes: s.nodes.map((n): GraphNode => {
+        if (!idSet.has(n.id)) return n
+        const next: GraphNode = { ...n, ...rest }
+        // position 只合并传入的字段，避免冲掉 x/y
+        if (posPatch) {
+          next.position = {
+            x: posPatch.x ?? n.position.x,
+            y: posPatch.y ?? n.position.y,
+            z: posPatch.z !== undefined ? posPatch.z : n.position.z,
+          }
+        }
+        return next
+      }),
+    }))
+  },
 
   updateEdge: (id, patch) =>
     set((s) => ({
@@ -92,6 +146,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     set((s) => ({
       nodes: [...s.nodes, n],
       selectedNodeId: id,
+      selectedNodeIds: [id],
       selectedEdgeId: null,
       editingNodeId: id,
     }))
@@ -99,27 +154,41 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   },
 
   removeNode: (id) => {
-    const { nodes, edges, selectedNodeId, editingNodeId } = get()
+    const { nodes, edges, selectedNodeId, selectedNodeIds, editingNodeId } =
+      get()
+    const nextIds = selectedNodeIds.filter((x) => x !== id)
     set({
       nodes: nodes.filter((n) => n.id !== id),
       edges: edges.filter((e) => e.source !== id && e.target !== id),
-      selectedNodeId: selectedNodeId === id ? null : selectedNodeId,
+      selectedNodeId:
+        selectedNodeId === id
+          ? nextIds[nextIds.length - 1] ?? null
+          : selectedNodeId,
+      selectedNodeIds: nextIds,
       editingNodeId: editingNodeId === id ? null : editingNodeId,
     })
   },
 
   removeSelected: () => {
-    const { selectedNodeId, selectedEdgeId, nodes, edges, editingNodeId } =
-      get()
-    if (selectedNodeId) {
+    const {
+      selectedNodeIds,
+      selectedEdgeId,
+      nodes,
+      edges,
+      editingNodeId,
+    } = get()
+    if (selectedNodeIds.length > 0) {
+      const idSet = new Set(selectedNodeIds)
       set({
-        nodes: nodes.filter((n) => n.id !== selectedNodeId),
+        nodes: nodes.filter((n) => !idSet.has(n.id)),
         edges: edges.filter(
-          (e) => e.source !== selectedNodeId && e.target !== selectedNodeId,
+          (e) => !idSet.has(e.source) && !idSet.has(e.target),
         ),
         selectedNodeId: null,
+        selectedNodeIds: [],
         selectedEdgeId: null,
-        editingNodeId: editingNodeId === selectedNodeId ? null : editingNodeId,
+        editingNodeId:
+          editingNodeId && idSet.has(editingNodeId) ? null : editingNodeId,
       })
       return
     }
@@ -137,6 +206,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       nodes: doc.nodes,
       edges: doc.edges,
       selectedNodeId: null,
+      selectedNodeIds: [],
       selectedEdgeId: null,
       editingNodeId: null,
     }),
@@ -170,6 +240,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       nodes: [],
       edges: [],
       selectedNodeId: null,
+      selectedNodeIds: [],
       selectedEdgeId: null,
       editingNodeId: null,
       mode: 'edit',

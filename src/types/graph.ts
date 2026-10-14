@@ -13,6 +13,8 @@ export interface GraphNode {
   // 事件 / 事物 / 概念 等
   kind: 'event' | 'thing' | 'concept'
   position: Vec3
+  // 过长文字是否折叠（省略号）；默认 false 完整换行显示
+  labelFolded?: boolean
 }
 
 export interface GraphEdge {

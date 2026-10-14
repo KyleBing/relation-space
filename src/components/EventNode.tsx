@@ -5,7 +5,7 @@ import { InlineEditable } from './InlineEditable'
 import { useGraphStore } from '../store/graphStore'
 
 export type FlowEventNode = Node<
-  { label: string; kind: GraphNode['kind'] },
+  { label: string; kind: GraphNode['kind']; labelFolded?: boolean },
   'event'
 >
 
@@ -17,10 +17,11 @@ const kindClass: Record<GraphNode['kind'], string> = {
 
 function EventNodeComponent({ id, data, selected }: NodeProps<FlowEventNode>) {
   const updateNode = useGraphStore((s) => s.updateNode)
+  const folded = data.labelFolded === true
 
   return (
     <div
-      className={`event-node ${kindClass[data.kind]} ${selected ? 'is-selected' : ''}`}
+      className={`event-node ${kindClass[data.kind]} ${selected ? 'is-selected' : ''} ${folded ? 'is-label-folded' : ''}`}
       title={`${data.label || '未命名'}（双击文字编辑）`}
     >
       <Handle

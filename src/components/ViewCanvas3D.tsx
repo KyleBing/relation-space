@@ -174,7 +174,7 @@ function GraphScene() {
               />
             </mesh>
             <Html distanceFactor={7} position={[0, 0.22, 0]} center>
-              <div className="label-3d">{n.label}</div>
+              <div className={`label-3d label-3d-${n.kind}`}>{n.label}</div>
             </Html>
           </group>
         )

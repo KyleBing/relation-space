@@ -17,9 +17,9 @@ export function Toolbar() {
   const newBlank = useGraphStore((s) => s.newBlank)
   const nodes = useGraphStore((s) => s.nodes)
   const edges = useGraphStore((s) => s.edges)
-  const selectedNodeId = useGraphStore((s) => s.selectedNodeId)
+  const selectedNodeIds = useGraphStore((s) => s.selectedNodeIds)
   const selectedEdgeId = useGraphStore((s) => s.selectedEdgeId)
-  const hasSelection = Boolean(selectedNodeId || selectedEdgeId)
+  const hasSelection = selectedNodeIds.length > 0 || Boolean(selectedEdgeId)
 
   const flash = (msg: string) => {
     setStatus(msg)
