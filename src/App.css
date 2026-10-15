@@ -218,6 +218,50 @@
   cursor: not-allowed;
 }
 
+.align-guide-toggle {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0.28rem 0.55rem;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(30, 42, 54, 0.12);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 6px 18px rgba(21, 32, 43, 0.08);
+  font-size: 0.75rem;
+  color: #5a6b7a;
+  cursor: pointer;
+  user-select: none;
+}
+
+.align-guide-toggle input {
+  margin: 0;
+  accent-color: #2f6f7e;
+}
+
+.align-guide-toggle.is-on {
+  color: #1a4a54;
+  border-color: rgba(47, 111, 126, 0.45);
+}
+
+.align-guide-svg {
+  position: absolute;
+  overflow: visible;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.align-guide-svg line {
+  stroke: #2f6f7e;
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+}
+
 .inspector {
   border-left: 1px solid rgba(30, 42, 54, 0.1);
   background: rgba(250, 252, 254, 0.92);
@@ -319,9 +363,8 @@
   cursor: pointer;
 }
 
-.field input,
-.field select,
-.edge-list input {
+.field input:not([type='radio']):not([type='checkbox']),
+.edge-list input:not([type='radio']):not([type='checkbox']) {
   font: inherit;
   font-size: 0.9rem;
   color: #15202b;
@@ -329,6 +372,90 @@
   border-radius: 0.4rem;
   padding: 0.45rem 0.55rem;
   background: #fff;
+  width: 100%;
+}
+
+/* 占位文字明显浅于正文，避免和已输入内容混在一起 */
+input::placeholder {
+  color: #b7c3ce;
+  opacity: 1;
+}
+
+.kind-radios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.kind-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0.28rem 0.6rem;
+  border: 1px solid rgba(30, 42, 54, 0.14);
+  border-radius: 999px;
+  background: #fff;
+  color: #5a6b7a;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+
+.kind-radio input {
+  margin: 0;
+  accent-color: currentColor;
+}
+
+.kind-radio.kind-event:has(input:checked) {
+  color: #1a4a54;
+  border-color: rgba(47, 111, 126, 0.55);
+  background: rgba(47, 111, 126, 0.12);
+}
+
+.kind-radio.kind-thing:has(input:checked) {
+  color: #7a3518;
+  border-color: rgba(179, 88, 42, 0.55);
+  background: rgba(179, 88, 42, 0.12);
+}
+
+.kind-radio.kind-concept:has(input:checked) {
+  color: #243d5c;
+  border-color: rgba(61, 90, 128, 0.55);
+  background: rgba(61, 90, 128, 0.12);
+}
+
+.clearable {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: middle;
+}
+
+.inspector .clearable,
+.field > .clearable {
+  display: block;
+}
+
+.clear-btn {
+  position: absolute;
+  top: 50%;
+  right: 0.35rem;
+  transform: translateY(-50%);
+  width: 1.05rem;
+  height: 1.05rem;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: rgba(21, 32, 43, 0.08);
+  color: #6a7b8c;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.clear-btn:hover {
+  background: rgba(21, 32, 43, 0.16);
+  color: #15202b;
 }
 
 .edge-list {
@@ -478,6 +605,16 @@
   cursor: text;
 }
 
+.inline-editable.is-placeholder,
+.title-input.is-placeholder,
+.inspector-inline.is-placeholder,
+.edge-label-text.is-placeholder,
+.event-node.kind-event .event-node-label.is-placeholder,
+.event-node.kind-thing .event-node-label.is-placeholder,
+.event-node.kind-concept .event-node-label.is-placeholder {
+  color: #b7c3ce;
+}
+
 .rf-handle {
   width: 6px !important;
   height: 6px !important;
@@ -558,6 +695,18 @@
   box-sizing: border-box;
   outline: none;
   border-color: #2f6f7e;
+}
+
+/* 放在各输入框 padding 之后，避免被简写覆盖 */
+.field .clearable.has-clear > input,
+.edge-list .clearable.has-clear > .inspector-inline,
+.clearable.has-clear > .inline-edit-input,
+.clearable.has-clear > .inline-editable,
+.clearable.has-clear > .inspector-inline,
+.clearable.has-clear > .edge-label-text,
+.clearable.has-clear > .event-node-label,
+.clearable.has-clear > .title-input {
+  padding-right: 1.65rem;
 }
 
 .label-3d {

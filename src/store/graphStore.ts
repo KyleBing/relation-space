@@ -128,7 +128,8 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       edges: s.edges.map((e) => (e.id === id ? { ...e, ...patch } : e)),
     })),
 
-  addNode: (kind = 'event', position) => {
+  // 未指定类型时新建事物，并马上进入名称编辑
+  addNode: (kind = 'thing', position) => {
     nodeSeq += 1
     const id = uid('n')
     const n: GraphNode = {
@@ -149,6 +150,8 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       selectedNodeIds: [id],
       selectedEdgeId: null,
       editingNodeId: id,
+      // 先占住编辑态，避免回车连发再新建一个
+      editingText: true,
     }))
     return id
   },

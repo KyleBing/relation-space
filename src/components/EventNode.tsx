@@ -33,7 +33,6 @@ function EventNodeComponent({ id, data, selected }: NodeProps<FlowEventNode>) {
       <InlineEditable
         className="event-node-label"
         value={data.label}
-        fallback="未命名"
         placeholder="输入名称"
         autoEditId={id}
         onChange={(label) => updateNode(id, { label })}

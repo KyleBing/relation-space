@@ -33,7 +33,6 @@ export function Toolbar() {
         <InlineEditable
           className="title-input"
           value={title}
-          fallback="未命名关系图"
           placeholder="双击编辑标题"
           onChange={setTitle}
         />

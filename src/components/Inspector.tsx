@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useGraphStore } from '../store/graphStore'
 import type { GraphNode } from '../types/graph'
 import { InlineEditable } from './InlineEditable'
@@ -6,6 +7,89 @@ const KIND_LABEL: Record<GraphNode['kind'], string> = {
   event: '事件',
   thing: '事物',
   concept: '概念',
+}
+
+const KIND_OPTIONS: GraphNode['kind'][] = ['event', 'thing', 'concept']
+
+// 类型用 radio，避免下拉框
+function KindRadios({
+  name,
+  value,
+  onChange,
+}: {
+  name: string
+  value: GraphNode['kind']
+  onChange: (kind: GraphNode['kind']) => void
+}) {
+  return (
+    <div className="kind-radios" role="radiogroup" aria-label="类型">
+      {KIND_OPTIONS.map((kind) => (
+        <label key={kind} className={`kind-radio kind-${kind}`}>
+          <input
+            type="radio"
+            name={name}
+            value={kind}
+            checked={value === kind}
+            onChange={() => onChange(kind)}
+          />
+          <span>{KIND_LABEL[kind]}</span>
+        </label>
+      ))}
+    </div>
+  )
+}
+
+// 数字输入右侧的清除按钮
+function ClearableNumber({
+  value,
+  placeholder,
+  onChange,
+}: {
+  value: string
+  placeholder?: string
+  onChange: (value: string) => void
+}) {
+  // 0 视为已清空，不再显示清除按钮
+  const canClear = value.trim().length > 0 && Number(value) !== 0
+  return (
+    <span className={`clearable${canClear ? ' has-clear' : ''}`}>
+      <input
+        type="number"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {canClear && (
+        <button
+          type="button"
+          className="clear-btn"
+          aria-label="清除"
+          onMouseDown={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+          }}
+          onClick={() => onChange('')}
+        >
+          ×
+        </button>
+      )}
+    </span>
+  )
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string
+  children: ReactNode
+}) {
+  return (
+    <div className="field">
+      <span>{label}</span>
+      {children}
+    </div>
+  )
 }
 
 export function Inspector() {
@@ -66,33 +150,23 @@ export function Inspector() {
           <p className="muted">仅当选中项为同一类别时可批量修改属性。</p>
         ) : (
           <>
-            <label className="field">
-              <span>类型</span>
-              <select
+            <Field label="类型">
+              <KindRadios
+                name="kind-batch"
                 value={kind}
-                onChange={(e) =>
-                  updateNodes(multiIds, {
-                    kind: e.target.value as GraphNode['kind'],
-                  })
-                }
-              >
-                <option value="event">事件</option>
-                <option value="thing">事物</option>
-                <option value="concept">概念</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>深度 Z（影响 3D）</span>
-              <input
-                type="number"
-                value={sameZ ? zValues[0] : ''}
+                onChange={(next) => updateNodes(multiIds, { kind: next })}
+              />
+            </Field>
+            <Field label="深度 Z（影响 3D）">
+              <ClearableNumber
+                value={sameZ ? String(zValues[0]) : ''}
                 placeholder={sameZ ? undefined : '多个值'}
-                onChange={(e) => {
-                  const z = Number(e.target.value) || 0
+                onChange={(raw) => {
+                  const z = Number(raw) || 0
                   updateNodes(multiIds, { position: { z } })
                 }}
               />
-            </label>
+            </Field>
             <label className="field field-check">
               <span>折叠过长文字</span>
               <input
@@ -144,16 +218,16 @@ export function Inspector() {
         <p className="muted">
           {from?.label ?? '?'} → {to?.label ?? '?'}
         </p>
-        <label className="field">
-          <span>关系名（也可在线上双击）</span>
+        <Field label="关系名（也可在线上双击）">
           <InlineEditable
             className="inspector-inline"
             value={selectedEdge.label ?? ''}
             placeholder="关系"
             activateOn="click"
+            clearable
             onChange={(label) => updateEdge(selectedEdge.id, { label })}
           />
-        </label>
+        </Field>
         <button
           type="button"
           className="linkish"
@@ -180,46 +254,36 @@ export function Inspector() {
       <p className={`kind-badge kind-${selected.kind}`}>
         {KIND_LABEL[selected.kind]}
       </p>
-      <label className="field">
-        <span>名称（也可在节点上双击）</span>
+      <Field label="名称（也可在节点上双击）">
         <InlineEditable
           className="inspector-inline"
           value={selected.label}
-          fallback="未命名"
+          placeholder="输入名称"
           activateOn="click"
+          clearable
           onChange={(label) => updateNode(selected.id, { label })}
         />
-      </label>
-      <label className="field">
-        <span>类型</span>
-        <select
+      </Field>
+      <Field label="类型">
+        <KindRadios
+          name={`kind-${selected.id}`}
           value={selected.kind}
-          onChange={(e) =>
-            updateNode(selected.id, {
-              kind: e.target.value as GraphNode['kind'],
-            })
-          }
-        >
-          <option value="event">事件</option>
-          <option value="thing">事物</option>
-          <option value="concept">概念</option>
-        </select>
-      </label>
-      <label className="field">
-        <span>深度 Z（影响 3D）</span>
-        <input
-          type="number"
-          value={selected.position.z ?? 0}
-          onChange={(e) =>
+          onChange={(kind) => updateNode(selected.id, { kind })}
+        />
+      </Field>
+      <Field label="深度 Z（影响 3D）">
+        <ClearableNumber
+          value={String(selected.position.z ?? 0)}
+          onChange={(raw) =>
             updateNode(selected.id, {
               position: {
                 ...selected.position,
-                z: Number(e.target.value) || 0,
+                z: Number(raw) || 0,
               },
             })
           }
         />
-      </label>
+      </Field>
       <label className="field field-check">
         <span>折叠过长文字</span>
         <input
@@ -245,6 +309,7 @@ export function Inspector() {
                 value={e.label ?? ''}
                 placeholder="关系名"
                 activateOn="click"
+                clearable
                 onChange={(label) => updateEdge(e.id, { label })}
               />
               <span className="edge-meta">

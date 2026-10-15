@@ -17,10 +17,12 @@ import {
   useReactFlow,
   ReactFlowProvider,
   SelectionMode,
+  ViewportPortal,
   type Connection,
   type Edge,
   type FinalConnectionState,
   type Node,
+  type NodeChange,
   type OnSelectionChangeParams,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -29,6 +31,7 @@ import { RelationEdge } from './RelationEdge'
 import { ContextMenu, type ContextMenuState } from './ContextMenu'
 import { SelectionAlignBar } from './SelectionAlignBar'
 import { alignSelectedNodes, type AlignMode } from '../lib/alignNodes'
+import { snapToNodes, type AlignGuide } from '../lib/alignGuides'
 import { nextEdgeId, useGraphStore } from '../store/graphStore'
 import type { GraphEdge, GraphNode } from '../types/graph'
 
@@ -38,8 +41,9 @@ const edgeTypes = { relation: RelationEdge }
 function toFlowNodes(
   nodes: GraphNode[],
   prevFlow: FlowEventNode[] = [],
+  selectedIds: ReadonlySet<string> = new Set(),
 ): FlowEventNode[] {
-  // 保留已测量宽高与选中态，否则连线吸附错位 / 框选后拖动丢选中
+  // 保留已测量宽高，否则连线吸附错位
   const prevMap = new Map(prevFlow.map((n) => [n.id, n]))
   return nodes.map((n) => {
     const prev = prevMap.get(n.id)
@@ -52,7 +56,8 @@ function toFlowNodes(
         kind: n.kind,
         labelFolded: n.labelFolded === true,
       },
-      ...(prev?.selected ? { selected: true } : {}),
+      // 新建节点按 store 选中，已有节点沿用画布上的选中态
+      selected: prev ? Boolean(prev.selected) : selectedIds.has(n.id),
       ...(prev?.measured ? { measured: prev.measured } : {}),
       ...(prev?.width != null ? { width: prev.width } : {}),
       ...(prev?.height != null ? { height: prev.height } : {}),
@@ -135,8 +140,11 @@ function EditCanvasInner() {
   const setSelectedEdgeId = useGraphStore((s) => s.setSelectedEdgeId)
   const addNode = useGraphStore((s) => s.addNode)
   const removeNode = useGraphStore((s) => s.removeNode)
-  const { screenToFlowPosition } = useReactFlow()
+  const { screenToFlowPosition, getViewport } = useReactFlow()
   const paneRef = useRef<HTMLDivElement>(null)
+  // 对齐参考默认关闭，打开后拖动才吸附并显示参考线
+  const [alignGuideOn, setAlignGuideOn] = useState(false)
+  const [alignGuide, setAlignGuide] = useState<AlignGuide>({})
 
   const [menu, setMenu] = useState<ContextMenuState | null>(null)
 
@@ -158,7 +166,10 @@ function EditCanvasInner() {
     if (nSig === lastNodesSig.current) return
     lastNodesSig.current = nSig
     syncingFromStore.current = true
-    setNodes((prev) => toFlowNodes(storeNodes, prev as FlowEventNode[]))
+    const selectedIds = new Set(useGraphStore.getState().selectedNodeIds)
+    setNodes((prev) =>
+      toFlowNodes(storeNodes, prev as FlowEventNode[], selectedIds),
+    )
     queueMicrotask(() => {
       syncingFromStore.current = false
     })
@@ -274,10 +285,10 @@ function EditCanvasInner() {
     return Boolean(c.source && c.target && c.source !== c.target)
   }, [])
 
-  // 回车：在视口中心添加事件节点（与工具栏「+ 事件」一致）
+  // 回车：在视口中心添加事物，并进入该节点的名称输入
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' || e.isComposing) return
+      if (e.key !== 'Enter' || e.repeat || e.isComposing) return
       if (useGraphStore.getState().editingText) return
       const t = e.target as HTMLElement | null
       if (
@@ -292,7 +303,7 @@ function EditCanvasInner() {
       e.preventDefault()
       const el = paneRef.current
       if (!el) {
-        addNode('event')
+        addNode('thing')
         return
       }
       const rect = el.getBoundingClientRect()
@@ -300,13 +311,68 @@ function EditCanvasInner() {
         x: rect.left + rect.width / 2,
         y: rect.top + rect.height / 2,
       })
-      addNode('event', flow)
+      addNode('thing', flow)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [addNode, screenToFlowPosition])
 
+  // 打开对齐参考时，拖动单节点吸附到其他节点的边和中线
+  const handleNodesChange = useCallback(
+    (changes: NodeChange<FlowEventNode>[]) => {
+      const drags = changes.filter(
+        (c): c is NodeChange<FlowEventNode> & {
+          type: 'position'
+          dragging: true
+          position: { x: number; y: number }
+          id: string
+        } =>
+          c.type === 'position' &&
+          c.dragging === true &&
+          !!c.position &&
+          typeof c.id === 'string',
+      )
+      if (!alignGuideOn || drags.length === 0) {
+        // 只有参考线还在时才清，避免每次选中都触发渲染
+        if (drags.length === 0) {
+          setAlignGuide((prev) =>
+            prev.vertical == null && prev.horizontal == null ? prev : {},
+          )
+        }
+        onNodesChange(changes)
+        return
+      }
+      const draggingIds = new Set(drags.map((d) => d.id))
+      const primary = drags[0]
+      const zoom = getViewport().zoom || 1
+      // 一起拖动的节点不互相当参考，避免吸附到自己的旧位置
+      const snapNodes = nodesRef.current.filter(
+        (n) => n.id === primary.id || !draggingIds.has(n.id),
+      )
+      const snapped = snapToNodes(
+        primary.id,
+        primary.position,
+        snapNodes,
+        8 / zoom,
+      )
+      const dx = snapped.position.x - primary.position.x
+      const dy = snapped.position.y - primary.position.y
+      setAlignGuide(snapped.guide)
+      onNodesChange(
+        changes.map((c) => {
+          if (c.type !== 'position' || !c.dragging || !c.position) return c
+          return {
+            ...c,
+            position: { x: c.position.x + dx, y: c.position.y + dy },
+          }
+        }),
+      )
+    },
+    [alignGuideOn, getViewport, onNodesChange],
+  )
+
   const onNodeDragStop = useCallback(() => {
+    setAlignGuide({})
     commitNodes(nodesRef.current as FlowEventNode[])
   }, [commitNodes])
 
@@ -404,7 +470,7 @@ function EditCanvasInner() {
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        onNodesChange={onNodesChange}
+        onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onConnectEnd={onConnectEnd}
@@ -457,7 +523,20 @@ function EditCanvasInner() {
           }}
           maskColor="rgba(245, 247, 250, 0.7)"
         />
+        <AlignGuideLines guide={alignGuide} />
       </ReactFlow>
+
+      <label className={`align-guide-toggle${alignGuideOn ? ' is-on' : ''}`}>
+        <input
+          type="checkbox"
+          checked={alignGuideOn}
+          onChange={(e) => {
+            setAlignGuideOn(e.target.checked)
+            if (!e.target.checked) setAlignGuide({})
+          }}
+        />
+        对齐参考
+      </label>
 
       {menu && (
         <ContextMenu
@@ -471,7 +550,7 @@ function EditCanvasInner() {
       <SelectionAlignBar count={selectedCount} onAlign={onAlign} />
 
       <p className="canvas-hint">
-        拖动画布框选 · Shift 多选 · 空格+拖动平移 · 回车添加 · 拖出连线松手新建 ·
+        拖动画布框选 · Shift 多选 · 空格+拖动平移 · 回车添加事物 · 拖出连线松手新建 ·
         Delete 删除
       </p>
     </div>
@@ -483,5 +562,27 @@ export function EditCanvas() {
     <ReactFlowProvider>
       <EditCanvasInner />
     </ReactFlowProvider>
+  )
+}
+
+// 拖动时画出与其他节点对齐的参考线
+function AlignGuideLines({ guide }: { guide: AlignGuide }) {
+  if (guide.vertical == null && guide.horizontal == null) return null
+  return (
+    <ViewportPortal>
+      <svg className="align-guide-svg">
+        {guide.vertical != null && (
+          <line x1={guide.vertical} y1={-8000} x2={guide.vertical} y2={8000} />
+        )}
+        {guide.horizontal != null && (
+          <line
+            x1={-8000}
+            y1={guide.horizontal}
+            x2={8000}
+            y2={guide.horizontal}
+          />
+        )}
+      </svg>
+    </ViewportPortal>
   )
 }
